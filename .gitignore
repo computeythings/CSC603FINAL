@@ -1,0 +1,5 @@
+.env
+.venv/
+**/target
+**/aws
+awscliv2.zip
