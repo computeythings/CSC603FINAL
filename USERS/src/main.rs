@@ -1,6 +1,7 @@
 use std::env;
 use std::time::{Duration, SystemTime};
-use serde_json::json;
+use serde_json::{json, Value};
+use serde::{Serialize, Deserialize};
 use sqlx::FromRow;
 use sqlx::postgres::PgConnectOptions;
 use http::HeaderMap;
@@ -13,7 +14,7 @@ use aws_sigv4::{
     sign::v4,
 };
 
-#[derive(Clone, FromRow)]
+#[derive(Clone, FromRow, Serialize, Deserialize)]
 struct UserInfo {
     first_name: String,
     last_name: String,
@@ -29,6 +30,53 @@ struct UserUpload {
 }
 
 const RDS_CERTS: &[u8] = include_bytes!("global-bundle.pem");
+
+fn response(status_code: i64, data: Value) -> ApiGatewayProxyResponse{
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", "application/json".parse().unwrap());
+    return ApiGatewayProxyResponse {
+        multi_value_headers: headers.clone(),
+        is_base64_encoded: false,
+        // body: Some(json!({"message": message}).to_string().into()),
+        body: Some(data.to_string().into()),
+        status_code: status_code,
+        headers
+    };
+}
+
+async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &String) -> ApiGatewayProxyResponse {
+    let userdata = r#"
+        SELECT u.first_name, u.last_name, u.conditions
+        FROM "Users" AS u
+        JOIN "CustomerUsers" AS cu ON u.id = cu.user_id
+        WHERE cu.id = $1
+            AND cu.user_id = $2
+    "#;
+
+    let query = sqlx::query_as::<_, UserInfo>(userdata)
+        .bind(customer_id)
+        .bind(user_id);
+    
+    let users: Vec<UserInfo> = query
+        .fetch_all(db_connection)
+        .await
+        .expect("Database user query");
+
+    println!("Found {} users", users.len());
+    
+    match users.len() {
+        0 => response(
+            200, 
+            json!({ "data": { "user": {} } })
+        ),
+        1 => response(
+            200, 
+            json!({ "data": { "user": users[0].clone() } })
+        ),
+        // Requests should not be able to return more than a single user
+        _ => response(401, json!({"message": "Unauthorized request"}))
+    }
+}
 
 async fn generate_rds_iam_token(
     db_hostname: &str,
@@ -81,45 +129,6 @@ async fn generate_rds_iam_token(
     Ok(response)
 }
 
-async fn get_user(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &String) -> Option<UserInfo> {
-    let user_exists = r#"
-        SELECT u.first_name, u.last_name, u.conditions
-        FROM "Users" AS u
-        JOIN "CustomerUsers" AS cu ON u.id = cu.user_id
-        WHERE cu.id = $1
-            AND cu.user_id = $2
-    "#;
-
-    let query = sqlx::query_as::<_, UserInfo>(user_exists)
-        .bind(customer_id)
-        .bind(user_id);
-    
-    let users: Vec<UserInfo> = query
-        .fetch_all(db_connection)
-        .await
-        .expect("Database user query");
-
-    println!("Found {} users", users.len());
-    
-    match users.len() {
-        0 => None,
-        1 => Some(users[0].clone()),
-        _ => panic!("Received too many matching rows. Suspected injection!")
-    }
-}
-
-fn response(status_code: i64, message: &str) -> ApiGatewayProxyResponse{
-    let mut headers = HeaderMap::new();
-    headers.insert("Content-Type", "application/json".parse().unwrap());
-    return ApiGatewayProxyResponse {
-        multi_value_headers: headers.clone(),
-        is_base64_encoded: false,
-        body: Some(json!({"message": message}).to_string().into()),
-        status_code: status_code,
-        headers
-    };
-}
-
 async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>) 
                     -> Result<ApiGatewayProxyResponse, Error> {
     // Read env variables
@@ -153,7 +162,7 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
 
     // Read API Gateway data
     let user_query = &event.payload.query_string_parameters;
-    let req_method = &event.payload.request_context.http_method;
+    let req_method = event.payload.request_context.http_method;
     let customer_sub = &event.payload.request_context.authorizer.fields
         .get("claims")
         .and_then(|claims| claims.get("sub"))
@@ -161,27 +170,33 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
         .unwrap_or("Could not identify requestor.".to_string())
         .replace("\"",""); // Filter out the quote characters pulled from the json data
     
-   
-    // TEST LOCATION
-    let mut message: String = String::new();
-    let id = match user_query.first("id") {
-        Some(istr) => istr,
-        None => ""
-    }.to_string();
-    if id.is_empty() {
-        return Ok(response(400, "Could not identify query ID."));
+    let id = user_query.first("id").unwrap_or("").to_string();
+    match req_method {
+        http::Method::GET => return Ok( user_get(&pool, customer_sub, &id).await ),
+        http::Method::PUT => println!("PUT"),
+        http::Method::PATCH => println!("PACTH"),
+        http::Method::DELETE => println!("DELETE"),
+        _ => println!("Unsupported method")
     }
-    message.push_str(&format!("\nQuery ID is: {}", id));
-    message.push_str(&format!("\nCustomer ID: {}", customer_sub.to_string())); 
-    message.push_str("\rRequest method: ");
-    message.push_str(&req_method.as_str());
+    Ok(response(200, json!({ "message": "Success" })))
     // TEST LOCATION
-    match get_user(&pool, customer_sub, &id).await {
-        Some(user) => message.push_str(&format!("\nfirst_name: {}\nlast_name: {}", user.first_name, user.last_name)),
-        None => message.push_str(&format!("\nNo matching user found"))
-    }
-
-    Ok(response(200, &message))
+    // let mut message: String = String::new();
+    // let id = match user_query.first("id") {
+    //     Some(istr) => istr,
+    //     None => ""
+    // }.to_string();
+    // if id.is_empty() {
+    //     return Ok(response(400, "Could not identify query ID."));
+    // }
+    // message.push_str(&format!("\nQuery ID is: {}", id));
+    // message.push_str(&format!("\nCustomer ID: {}", customer_sub.to_string())); 
+    // message.push_str("\rRequest method: ");
+    // message.push_str(&req_method.as_str());
+    // TEST LOCATION
+    // match user_get(&pool, customer_sub, &id).await {
+    //     Some(user) => message.push_str(&format!("\nfirst_name: {}\nlast_name: {}", user.first_name, user.last_name)),
+    //     None => message.push_str(&format!("\nNo matching user found"))
+    // }
 }
 
 #[tokio::main]

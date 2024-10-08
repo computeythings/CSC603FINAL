@@ -96,7 +96,7 @@ def user_get(token):
         params=params
     )
     if response.status_code == 200:
-        print("Response data:", response.json()['message'])  # or response.text for raw response
+        print("Response data:", json.dumps(response.json(), indent=4))  # or response.text for raw response
     else:
         print(f"Failed to make the request: {response.status_code} - {response.text}")
 
