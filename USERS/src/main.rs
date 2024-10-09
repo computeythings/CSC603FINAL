@@ -1,4 +1,5 @@
 use std::env;
+use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
@@ -71,8 +72,6 @@ async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &
         .fetch_all(db_connection)
         .await
         .expect("Database user query");
-
-    println!("Found {} users", users.len());
     
     match users.len() {
         0 => response(
@@ -156,7 +155,7 @@ async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &
     let user_delete = r#"
         DELETE FROM "Users"
         WHERE id = $1
-        AND NOT EXISTS (SELECT 1 FROM "CustomerUsers" WHERE user_id = $1);
+        AND NOT EXISTS (SELECT 1 FROM "CustomerUsers" WHERE user_id = $1)
     "#;
     let uid = gen_user_id(&user.id);
     // Start transaction
@@ -200,6 +199,53 @@ async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &
     }
 }
 
+async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &POSTBody) -> ApiGatewayProxyResponse {
+    let mut user_update_string = String::new();
+    user_update_string.push_str("UPDATE \"Users\" SET\n");
+    let uid = gen_user_id(&user.id);
+
+    // Determine what to update
+    let mut update_values = HashMap::<&str, String>::new();
+    user.first_name.as_ref().map(|s| update_values.insert("first_name", s.to_string()));
+    user.last_name.as_ref().map(|s| update_values.insert("last_name", s.to_string()));
+    user.email.as_ref().map(|s| update_values.insert("email", s.to_string()));
+    // No need to query if there's nothing to update
+    if update_values.len() < 1 {
+        return response(200, json!({"message": "Success"}));
+    }
+    // Insert keys to update
+    let mut i = 1;
+    for (key, _) in &update_values {
+        // Start index at i+2 to account for user id and customer id indexes
+        user_update_string.push_str(format!("{} = ${}", key, i+2).as_str());
+        if i < update_values.len() {
+            user_update_string.push(',');
+        }
+        user_update_string.push('\n');
+        i+=1;
+    }
+
+    user_update_string.push_str("WHERE id = $1\n");
+    user_update_string.push_str("AND EXISTS (SELECT 1 FROM \"CustomerUsers\" WHERE user_id = $1 AND id = $2)");
+    
+    // Create query and bind key values
+    let mut query = sqlx::query(&user_update_string.as_str())
+        .bind(&uid)
+        .bind(&customer_id);
+    for (_, value) in &update_values {
+        query = query.bind(value.as_str());
+    }
+    // Run update
+    match query.execute(db_connection)
+        .await {
+            Ok(_) => response(200, json!({"message": "Success"})),
+            Err(e) => {
+                println!("{}", e);
+                response(503, json!({"message": "Could not update user."}))
+            }
+        }
+}
+
 async fn user_post(db_connection: &sqlx::PgPool, customer_id: &String, body: &Option<String>) -> ApiGatewayProxyResponse {
     // TODO: process body
     let user_info: POSTBody = match body {
@@ -215,7 +261,7 @@ async fn user_post(db_connection: &sqlx::PgPool, customer_id: &String, body: &Op
     };
     match user_info.method.as_str() {
         "add" => user_add(db_connection, customer_id, &user_info).await,
-        "update" => response(200, json!({ "message": "TODO: delete user" })),
+        "update" => user_update(db_connection, customer_id, &user_info).await,
         "delete" => user_delete(db_connection, customer_id, &user_info).await,
         _ => response(405, json!({ "message": "Unsupported method" }))
     }

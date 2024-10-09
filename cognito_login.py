@@ -97,7 +97,7 @@ def user_get(token, uid):
         params=params
     )
     if response.status_code == 200:
-        print("Response data:", json.dumps(response.json(), indent=4))  # or response.text for raw response
+        print("Response data:", response.text)  # or response.text for raw response
     else:
         print(f"Failed to make the request: {response.status_code} - {response.text}")
 
@@ -121,7 +121,7 @@ def user_add(token, uid):
         "id": uid,
         "method": "add",
         "first_name": "PythonUpload",
-        "last_name": "McPoloaderson",
+        "last_name": "McPloaderson",
         "email": "useremail@hotmail.com"
     }
     response = requests.post(
@@ -130,6 +130,25 @@ def user_add(token, uid):
         json=body
     )
     print("ADD STATUS: " + response.text)
+
+def user_update(token, uid):
+    headers = {
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    body = {
+        "id": uid,
+        "method": "update",
+        "first_name": "UH OH I CHANGED THE NAME",
+        "email": "also the email is different"
+    }
+    response = requests.post(
+        APP_URL_BASE + "/users",
+        headers=headers,
+        json=body
+    )
+    print("UPDATE STATUS: " + response.text)
 
 def user_delete(token, uid):
     headers = {
@@ -159,6 +178,8 @@ def main():
     try:
         token = sign_in(cognito_idp_client)
         user_add(token, user_id_hash)
+        user_get(token, user_id_hash)
+        user_update(token, user_id_hash)
         user_get(token, user_id_hash)
         user_delete(token, user_id_hash)
         user_get(token, user_id_hash)
