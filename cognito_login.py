@@ -129,7 +129,24 @@ def user_add(token, uid):
         headers=headers,
         json=body
     )
-    print(response.text)
+    print("ADD STATUS: " + response.text)
+
+def user_delete(token, uid):
+    headers = {
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    body = {
+        "id": uid,
+        "method": "delete"
+    }
+    response = requests.post(
+        APP_URL_BASE + "/users",
+        headers=headers,
+        json=body
+    )
+    print("DELETE STATUS: " + response.text)
 
 
 def main(): 
@@ -142,6 +159,8 @@ def main():
     try:
         token = sign_in(cognito_idp_client)
         user_add(token, user_id_hash)
+        user_get(token, user_id_hash)
+        user_delete(token, user_id_hash)
         user_get(token, user_id_hash)
     finally:
         if token:
