@@ -81,13 +81,14 @@ def refresh(client, refresh_token):
         )
     return response
 
-def user_get(token):
+def user_get(token, uid):
     headers = {
         "Authorization": token,
         "Content-Type": "application/json"
     }
     params = {
-        "id": "ac6f7e1dafd35f549e916bc54fc88ee7894c6826c98f6a0a34fedee693493ce8"
+        #"id": "ac6f7e1dafd35f549e916bc54fc88ee7894c6826c98f6a0a34fedee693493ce8"
+        "id": uid
     }
     response = requests.get(
         APP_URL_BASE + "/users",
@@ -100,12 +101,48 @@ def user_get(token):
     else:
         print(f"Failed to make the request: {response.status_code} - {response.text}")
 
+"""
+    struct UserRequest {
+        id: String,
+        method: String, // Add, modify, delete
+        first_name: Option<String>,
+        last_name: Option<String>,
+        email: Option<String>,
+        documents: Option<Vec<String>> // Vector of filenames
+    }
+"""
+def user_add(token, uid):
+    headers = {
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    body = {
+        "id": uid,
+        "method": "add",
+        "first_name": "PythonUpload",
+        "last_name": "McPoloaderson",
+        "email": "useremail@hotmail.com"
+    }
+    response = requests.post(
+        APP_URL_BASE + "/users",
+        headers=headers,
+        json=body
+    )
+    print(response.text)
+
+
 def main(): 
     cognito_idp_client = boto3.client('cognito-idp', region_name="us-west-1")
     token = None
+    user_id_b64 = "545019999".encode() # Will use a hash of SSN which will be salted and re-hashed server-side
+    c = hashlib.sha256()
+    c.update(user_id_b64)
+    user_id_hash = c.hexdigest()
     try:
         token = sign_in(cognito_idp_client)
-        user_get(token)
+        user_add(token, user_id_hash)
+        user_get(token, user_id_hash)
     finally:
         if token:
             sign_out(cognito_idp_client, token)

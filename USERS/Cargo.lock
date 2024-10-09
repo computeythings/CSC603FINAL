@@ -19,6 +19,7 @@ dependencies = [
  "runtime-tokio",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
  "url",

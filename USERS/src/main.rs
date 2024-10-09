@@ -1,4 +1,5 @@
 use std::env;
+use sha2::{Sha256, Digest};
 use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 use serde::{Serialize, Deserialize};
@@ -21,23 +22,32 @@ struct UserInfo {
     conditions: Vec<bool>
 }
 
-struct UserUpload {
-    first_name: String,
-    last_name: String,
-    email: String,
-    documents: Vec<String>, // Vector of filenames
-    conditions: Vec<bool>
+#[derive(Debug, Serialize, Deserialize)]
+struct UserRequest {
+    id: String,
+    method: String, // Add, modify, delete
+    first_name: Option<String>,
+    last_name: Option<String>,
+    email: Option<String>,
+    documents: Option<Vec<String>> // Vector of filenames
 }
 
 const RDS_CERTS: &[u8] = include_bytes!("global-bundle.pem");
 
-fn response(status_code: i64, data: Value) -> ApiGatewayProxyResponse{
+fn gen_user_id(input: &String) -> String {
+    let salt = env::var("SALT").expect("SALT must be set");
+    let mut c = Sha256::new();
+    c.update(input.to_owned() + &salt);
+    let result = c.finalize();
+    format!("{:x}", result)
+}
+
+fn response(status_code: i64, data: Value) -> ApiGatewayProxyResponse {
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", "application/json".parse().unwrap());
     return ApiGatewayProxyResponse {
         multi_value_headers: headers.clone(),
         is_base64_encoded: false,
-        // body: Some(json!({"message": message}).to_string().into()),
         body: Some(data.to_string().into()),
         status_code: status_code,
         headers
@@ -45,7 +55,7 @@ fn response(status_code: i64, data: Value) -> ApiGatewayProxyResponse{
 }
 
 async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &String) -> ApiGatewayProxyResponse {
-    let userdata = r#"
+    let user_query = r#"
         SELECT u.first_name, u.last_name, u.conditions
         FROM "Users" AS u
         JOIN "CustomerUsers" AS cu ON u.id = cu.user_id
@@ -53,7 +63,7 @@ async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &
             AND cu.user_id = $2
     "#;
 
-    let query = sqlx::query_as::<_, UserInfo>(userdata)
+    let query = sqlx::query_as::<_, UserInfo>(user_query)
         .bind(customer_id)
         .bind(user_id);
     
@@ -76,6 +86,88 @@ async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &
         // Requests should not be able to return more than a single user
         _ => response(401, json!({"message": "Unauthorized request"}))
     }
+}
+
+async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserRequest) -> ApiGatewayProxyResponse {
+    let user_add = r#"
+        INSERT INTO "Users" 
+        (id, first_name, last_name, email)
+        VALUES
+        ($1, $2, $3, $4)
+        ON CONFLICT (id) DO NOTHING
+    "#;
+    let relation_add = r#"
+        INSERT INTO "CustomerUsers"
+        (id, user_id)
+        VALUES
+        ($1, $2)
+    "#;
+    let uid = gen_user_id(&user.id);
+    // Start transaction
+    let mut tx = match db_connection.begin().await {
+        Ok(result) => result,
+        Err(_) => {
+            return response(503, json!({"message": "Database is busy."}));
+        }
+    };
+
+    match sqlx::query(user_add)
+        .bind(&uid)
+        .bind(&user.first_name.as_ref().unwrap())
+        .bind(&user.last_name.as_ref().unwrap())
+        .bind(&user.email.as_ref().unwrap())
+        .execute(&mut *tx)
+        .await {
+            Ok(result) => result,
+            Err(e) => {
+                println!("{}",e);
+                tx.rollback().await.expect("Database rollback");
+                return response(503, json!({"message": "Could not add user."}));
+            }
+        }
+        .rows_affected();
+
+    match sqlx::query(relation_add)
+        .bind(&customer_id)
+        .bind(&uid)
+        .execute(&mut *tx)
+        .await {
+            Ok(result) => result,
+            Err(e) => {
+                println!("{}",e);
+                tx.rollback().await.expect("Database rollback");
+                return response(503, json!({"message": "Could not bind user to customer."}));
+            }
+        };
+
+    println!("Committing comlete");
+    // Commit transaction
+    match tx.commit().await {
+        Ok(_) => response(200, json!({"message": "Success"})),
+        Err(_) => response(503, json!({"message": "Could not commit transaction."}))
+    }
+}
+
+async fn user_post(db_connection: &sqlx::PgPool, customer_id: &String, body: &Option<String>) -> ApiGatewayProxyResponse {
+    // TODO: process body
+    let user_info: UserRequest = match body {
+        Some(b) => match serde_json::from_str(b) {
+            Ok(o) => o,
+            Err(_) => {
+                return response(401, json!({"message": "Invalid data"}))
+            }
+        },
+        None => {
+            return response(401, json!({"message": "No data supplied"}))
+        }
+    };
+    match user_info.method.as_str() {
+        "add" => user_add(db_connection, customer_id, &user_info).await,
+        "update" => response(200, json!({ "message": "TODO: delete user" })),
+        "delete" => response(200, json!({ "message": "TODO: delete user" })),
+        _ => response(405, json!({ "message": "Unsupported method" }))
+    }
+    
 }
 
 async fn generate_rds_iam_token(
@@ -139,7 +231,7 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
         .expect("PORT must be a valid number");
     let db_name = env::var("DB_NAME").expect("DB_NAME must be set");
     let db_username = env::var("DB_USERNAME").expect("DB_USERNAME must be set");
-
+    
     // Generate IAM token for RDS connection
     let token = generate_rds_iam_token(&db_host, db_port, &db_username)
         .await
@@ -161,6 +253,7 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
         .expect("PGPOOL CONNECT");
 
     // Read API Gateway data
+    let body = &event.payload.body;
     let user_query = &event.payload.query_string_parameters;
     let req_method = event.payload.request_context.http_method;
     let customer_sub = &event.payload.request_context.authorizer.fields
@@ -172,31 +265,11 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
     
     let id = user_query.first("id").unwrap_or("").to_string();
     match req_method {
-        http::Method::GET => return Ok( user_get(&pool, customer_sub, &id).await ),
-        http::Method::PUT => println!("PUT"),
-        http::Method::PATCH => println!("PACTH"),
-        http::Method::DELETE => println!("DELETE"),
+        http::Method::GET => return Ok( user_get(&pool, customer_sub, &gen_user_id(&id)).await ),
+        http::Method::POST => return Ok( user_post(&pool, customer_sub, &body).await ),
         _ => println!("Unsupported method")
     }
-    Ok(response(200, json!({ "message": "Success" })))
-    // TEST LOCATION
-    // let mut message: String = String::new();
-    // let id = match user_query.first("id") {
-    //     Some(istr) => istr,
-    //     None => ""
-    // }.to_string();
-    // if id.is_empty() {
-    //     return Ok(response(400, "Could not identify query ID."));
-    // }
-    // message.push_str(&format!("\nQuery ID is: {}", id));
-    // message.push_str(&format!("\nCustomer ID: {}", customer_sub.to_string())); 
-    // message.push_str("\rRequest method: ");
-    // message.push_str(&req_method.as_str());
-    // TEST LOCATION
-    // match user_get(&pool, customer_sub, &id).await {
-    //     Some(user) => message.push_str(&format!("\nfirst_name: {}\nlast_name: {}", user.first_name, user.last_name)),
-    //     None => message.push_str(&format!("\nNo matching user found"))
-    // }
+    Ok(response(405, json!({ "message": "Method not allowed" })))
 }
 
 #[tokio::main]
