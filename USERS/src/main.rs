@@ -24,13 +24,12 @@ struct UserInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct POSTBody {
+struct UserPOST {
     id: String,
     method: String, // Add, modify, delete
     first_name: Option<String>,
     last_name: Option<String>,
-    email: Option<String>,
-    documents: Option<Vec<String>> // Vector of filenames
+    email: Option<String>
 }
 
 const RDS_CERTS: &[u8] = include_bytes!("global-bundle.pem");
@@ -87,7 +86,7 @@ async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &
     }
 }
 
-async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &POSTBody) -> ApiGatewayProxyResponse {
+async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let user_add = r#"
         INSERT INTO "Users" 
         (id, first_name, last_name, email)
@@ -147,7 +146,7 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &POS
     }
 }
 
-async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &POSTBody) -> ApiGatewayProxyResponse {
+async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let user_relation_delete = r#"
         DELETE FROM "CustomerUsers"
         WHERE id = $1 AND user_id = $2
@@ -199,7 +198,7 @@ async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &
     }
 }
 
-async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &POSTBody) -> ApiGatewayProxyResponse {
+async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let mut user_update_string = String::new();
     user_update_string.push_str("UPDATE \"Users\" SET\n");
     let uid = gen_user_id(&user.id);
@@ -248,7 +247,7 @@ async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &
 
 async fn user_post(db_connection: &sqlx::PgPool, customer_id: &String, body: &Option<String>) -> ApiGatewayProxyResponse {
     // TODO: process body
-    let user_info: POSTBody = match body {
+    let user_info: UserPOST = match body {
         Some(b) => match serde_json::from_str(b) {
             Ok(o) => o,
             Err(_) => {
@@ -352,19 +351,19 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
 
     // Read API Gateway data
     let body = &event.payload.body;
-    let user_query = &event.payload.query_string_parameters;
+    let query_params = &event.payload.query_string_parameters;
     let req_method = event.payload.request_context.http_method;
-    let customer_sub = &event.payload.request_context.authorizer.fields
+    let caller_subject = &event.payload.request_context.authorizer.fields
         .get("claims")
         .and_then(|claims| claims.get("sub"))
         .map(|sub| sub.to_string())
         .unwrap_or("Could not identify requestor.".to_string())
         .replace("\"",""); // Filter out the quote characters pulled from the json data
     
-    let id = user_query.first("id").unwrap_or("").to_string();
+    let id = query_params.first("id").unwrap_or("").to_string();
     match req_method {
-        http::Method::GET => return Ok( user_get(&pool, customer_sub, &gen_user_id(&id)).await ),
-        http::Method::POST => return Ok( user_post(&pool, customer_sub, &body).await ),
+        http::Method::GET => return Ok( user_get(&pool, caller_subject, &gen_user_id(&id)).await ),
+        http::Method::POST => return Ok( user_post(&pool, caller_subject, &body).await ),
         _ => println!("Unsupported method")
     }
     Ok(response(405, json!({ "message": "Method not allowed" })))

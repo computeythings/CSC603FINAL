@@ -23,3 +23,4 @@ runtime-tokio = "0.0.0"
 openssl = { version = "0.10.66", features = ["vendored"] }
 aws-sdk-rds = "1.59.0"
 sha2 = "0.10.8"
+aws-sdk-s3 = "1.54.0"
