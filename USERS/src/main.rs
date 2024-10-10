@@ -151,51 +151,19 @@ async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &
         DELETE FROM "CustomerUsers"
         WHERE id = $1 AND user_id = $2
     "#;
-    let user_delete = r#"
-        DELETE FROM "Users"
-        WHERE id = $1
-        AND NOT EXISTS (SELECT 1 FROM "CustomerUsers" WHERE user_id = $1)
-    "#;
     let uid = gen_user_id(&user.id);
     // Start transaction
-    let mut tx = match db_connection.begin().await {
-        Ok(result) => result,
-        Err(_) => {
-            return response(503, json!({"message": "Database is busy."}));
-        }
-    };
-
     match sqlx::query(user_relation_delete)
         .bind(&customer_id)
         .bind(&uid)
-        .execute(&mut *tx)
+        .execute(db_connection)
         .await {
-            Ok(result) => result,
+            Ok(_) => response(200, json!({"message": "Success"})),
             Err(e) => {
                 println!("{}",e);
-                tx.rollback().await.expect("Database rollback");
-                return response(503, json!({"message": "Could not unbind user."}));
+                return response(503, json!({"message": "Could not remove user."}));
             }
-        };
-
-    match sqlx::query(user_delete)
-        .bind(&uid)
-        .execute(&mut *tx)
-        .await {
-            Ok(result) => result,
-            Err(e) => {
-                println!("{}",e);
-                tx.rollback().await.expect("Database rollback");
-                return response(503, json!({"message": "Could not delete user."}));
-            }
-        };
-
-    
-    // Commit transaction
-    match tx.commit().await {
-        Ok(_) => response(200, json!({"message": "Success"})),
-        Err(_) => response(503, json!({"message": "Could not commit transaction."}))
-    }
+        }
 }
 
 async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
