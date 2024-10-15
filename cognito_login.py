@@ -91,7 +91,7 @@ def user_get(token, uid):
         "id": uid
     }
     response = requests.get(
-        APP_URL_BASE + "/users",
+        APP_URL_BASE + "/api/v1/users",
         #APP_URL_BASE + "/test",
         headers=headers,
         params=params
@@ -125,7 +125,7 @@ def user_add(token, uid):
         "email": "useremail@hotmail.com"
     }
     response = requests.post(
-        APP_URL_BASE + "/users",
+        APP_URL_BASE + "/api/v1/users",
         headers=headers,
         json=body
     )
@@ -140,11 +140,11 @@ def user_update(token, uid):
     body = {
         "id": uid,
         "method": "update",
-        "first_name": "UH OH I CHANGED THE NAME",
+        "first_name": "I CHANGED THE NAME",
         "email": "also the email is different"
     }
     response = requests.post(
-        APP_URL_BASE + "/users",
+        APP_URL_BASE + "/api/v1/users",
         headers=headers,
         json=body
     )
@@ -161,11 +161,29 @@ def user_delete(token, uid):
         "method": "delete"
     }
     response = requests.post(
-        APP_URL_BASE + "/users",
+        APP_URL_BASE + "/api/v1/users",
         headers=headers,
         json=body
     )
     print("DELETE STATUS: " + response.text)
+
+def pdf_upload(token, folder, filename):
+    headers = {
+        "Authorization": token,
+        "Content-Type": "multipart/form-data",
+        "Accept": "application/json"
+    }
+    with open(filename, "rb") as file:
+        files = {"file": file}
+        response = requests.put(
+            APP_URL_BASE + f"/api/v1/upload/{folder}/{filename}", 
+            files=files,
+            headers=headers
+        )
+    if response.status_code == 200:
+        print("UPLOAD STATUS: 200 - OK")
+    else:
+        print("UPLOAD STATUS: " + response.text)
 
 
 def main(): 
@@ -183,6 +201,7 @@ def main():
         user_get(token, user_id_hash)
         user_delete(token, user_id_hash)
         user_get(token, user_id_hash)
+        pdf_upload(token, 'test', 'test.pdf')
     finally:
         if token:
             sign_out(cognito_idp_client, token)
