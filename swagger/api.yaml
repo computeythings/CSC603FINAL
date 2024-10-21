@@ -1,0 +1,198 @@
+---
+swagger: "2.0"
+info:
+  description: "CSC603 final project"
+  version: "2024-10-17T03:37:44Z"
+  title: "csc603"
+host: "csc603-2024-final.gonnella.dev"
+schemes:
+- "https"
+paths:
+  /api/v1/upload/{folder}/{item}:
+    put:
+      consumes:
+      - "multipart/form-data"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "item"
+        in: "path"
+        required: true
+        type: "string"
+      - name: "folder"
+        in: "path"
+        required: true
+        type: "string"
+      - in: "body"
+        name: "FileUpload"
+        required: true
+        schema:
+          $ref: "#/definitions/FileUpload"
+      responses:
+        "200":
+          description: "200 response"
+          schema:
+            $ref: "#/definitions/Empty"
+      security:
+      - CognitoAuth:
+        - "aws.cognito.signin.user.admin"
+      x-amazon-apigateway-integration:
+        credentials: "arn:aws:iam::183631319769:role/Medsupply-APIGateway"
+        httpMethod: "PUT"
+        uri: "arn:aws:apigateway:us-west-1:s3:path/csc603-2024-final-meddociq/{bucket}/{object}"
+        responses:
+          default:
+            statusCode: "200"
+        requestParameters:
+          integration.request.path.object: "method.request.path.item"
+          integration.request.path.bucket: "method.request.path.folder"
+        passthroughBehavior: "when_no_templates"
+        type: "aws"
+  /api/v1/users:
+    get:
+      produces:
+      - "application/json"
+      parameters:
+      - name: "id"
+        in: "query"
+        required: true
+        type: "string"
+      responses:
+        "200":
+          description: "200 response"
+          schema:
+            $ref: "#/definitions/UserGetBody"
+      security:
+      - CognitoAuth:
+        - "aws.cognito.signin.user.admin"
+      x-amazon-apigateway-request-validator: "Validate query string parameters and\
+        \ headers"
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: "arn:aws:apigateway:us-west-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-west-1:183631319769:function:USERS/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        requestParameters:
+          integration.request.querystring.test: "'testvalue'"
+          integration.request.querystring.id: "method.request.querystring.id"
+        passthroughBehavior: "when_no_templates"
+        timeoutInMillis: 29000
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
+    post:
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "UserPostBody"
+        required: true
+        schema:
+          $ref: "#/definitions/UserPostBody"
+      responses:
+        "200":
+          description: "200 response"
+          schema:
+            $ref: "#/definitions/UserGetBody"
+      security:
+      - CognitoAuth:
+        - "aws.cognito.signin.user.admin"
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: "arn:aws:apigateway:us-west-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-west-1:183631319769:function:USERS/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_templates"
+        timeoutInMillis: 29000
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
+securityDefinitions:
+  CognitoAuth:
+    type: "apiKey"
+    name: "Authorization"
+    in: "header"
+    x-amazon-apigateway-authtype: "cognito_user_pools"
+    x-amazon-apigateway-authorizer:
+      providerARNs:
+      - "arn:aws:cognito-idp:us-west-1:183631319769:userpool/us-west-1_TTsJR3Oe6"
+      type: "cognito_user_pools"
+definitions:
+  UserPostBody:
+    type: "object"
+    required:
+    - "method"
+    properties:
+      method:
+        type: "string"
+        enum:
+        - "add"
+        - "delete"
+        - "update"
+      id:
+        type: "string"
+      first_name:
+        type: "string"
+      last_name:
+        type: "string"
+      email:
+        type: "string"
+        format: "email"
+      ssn:
+        type: "string"
+        pattern: "^[0-9]{9}$"
+  Empty:
+    type: "object"
+    title: "Empty Schema"
+  UserGetBody:
+    type: "object"
+    required:
+    - "data"
+    properties:
+      data:
+        type: "object"
+        properties:
+          user:
+            type: "object"
+            properties:
+              id:
+                type: "string"
+              email:
+                type: "string"
+              pending_documents:
+                type: "integer"
+              conditions:
+                type: "array"
+                items:
+                  type: "boolean"
+              first_name:
+                type: "string"
+              last_name:
+                type: "string"
+            required:
+            - "conditions"
+            - "email"
+            - "first_name"
+            - "id"
+            - "last_name"
+            - "pending_documents"
+        required:
+        - "user"
+  FileUpload:
+    type: "object"
+    required:
+    - "file"
+    properties:
+      file:
+        type: "string"
+        format: "binary"
+        description: "The PDF file to be uploaded."
+x-amazon-apigateway-request-validators:
+  Validate query string parameters and headers:
+    validateRequestParameters: true
+    validateRequestBody: false
+x-amazon-apigateway-binary-media-types:
+- "application/pdf"
+- "multipart/form-data"
