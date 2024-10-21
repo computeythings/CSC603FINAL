@@ -97,7 +97,7 @@ def user_get(token, uid):
         params=params
     )
     if response.status_code == 200:
-        print("Response data:", response.text)  # or response.text for raw response
+        print("GET data:", response.text)  # or response.text for raw response
     else:
         print(f"Failed to make the request: {response.status_code} - {response.text}")
 
@@ -111,15 +111,15 @@ def user_get(token, uid):
         documents: Option<Vec<String>> // Vector of filenames
     }
 """
-def user_add(token, uid):
+def user_add(token, ssn):
     headers = {
         "Authorization": token,
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
     body = {
-        "id": uid,
         "method": "add",
+        "ssn": ssn,
         "first_name": "PythonUpload",
         "last_name": "McPloaderson",
         "email": "useremail@hotmail.com"
@@ -130,6 +130,7 @@ def user_add(token, uid):
         json=body
     )
     print("ADD STATUS: " + response.text)
+    return json.loads(response.text)
 
 def user_update(token, uid):
     headers = {
@@ -189,18 +190,15 @@ def pdf_upload(token, folder, filename):
 def main(): 
     cognito_idp_client = boto3.client('cognito-idp', region_name="us-west-1")
     token = None
-    user_id_b64 = "545019999".encode() # Will use a hash of SSN which will be salted and re-hashed server-side
-    c = hashlib.sha256()
-    c.update(user_id_b64)
-    user_id_hash = c.hexdigest()
+    ssn = '333995526'
     try:
         token = sign_in(cognito_idp_client)
-        user_add(token, user_id_hash)
-        user_get(token, user_id_hash)
-        user_update(token, user_id_hash)
-        user_get(token, user_id_hash)
-        user_delete(token, user_id_hash)
-        user_get(token, user_id_hash)
+        uid = user_add(token, ssn)["user"]["id"]
+        user_get(token, uid)
+        user_update(token, uid)
+        user_get(token, uid)
+        user_delete(token, uid)
+        user_get(token, uid)
         pdf_upload(token, 'test', 'test.pdf')
     finally:
         if token:
