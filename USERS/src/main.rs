@@ -82,9 +82,9 @@ async fn get_user_for_customer_by_id(db_connection: &sqlx::PgPool, customer_id: 
     let user_query = r#"
         SELECT u.id, u.first_name, u.last_name, u.email, u.conditions, u.pending_documents
         FROM "Customers" AS u
-        JOIN "PartnerCustomers" AS cu ON u.id = cu.user_id
-        WHERE cu.id = $1
-            AND cu.user_id = $2
+        JOIN "PartnerCustomers" AS pc ON u.id = pc.customer_id
+        WHERE pc.partner_id = $1
+            AND pc.customer_id = $2
     "#;
 
     let query = sqlx::query_as::<_, UserInfo>(user_query)
@@ -100,9 +100,9 @@ async fn get_user_by_ssn(db_connection: &sqlx::PgPool, customer_id: &String, use
     let user_query = r#"
         SELECT u.id, u.first_name, u.last_name, u.email, u.conditions, u.pending_documents
         FROM "Customers" AS u
-        JOIN "PartnerCustomers" AS cu ON u.id = cu.user_id
+        JOIN "PartnerCustomers" AS pc ON u.id = pc.customer_id
         WHERE u.ssn = $2 AND u.first_name = $3 AND u.last_name = $4
-            AND cu.id = $1
+            AND pc.partner_id = $1
     "#;
     let ssn_hash = hash_ssn(user.ssn.as_ref().unwrap());
     let query = sqlx::query_as::<_, UserInfo>(user_query)
@@ -158,7 +158,7 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
     "#;
     let relation_add = r#"
         INSERT INTO "PartnerCustomers"
-        (id, user_id)
+        (partner_id, customer_id)
         VALUES
         ($1, $2)
     "#;
@@ -173,8 +173,9 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
             }
         },
         None => {
+            println!("HASING SSN");
             let ssn = hash_ssn(&user.ssn.as_ref().unwrap());
-        
+            println!("ADDING USER");
             match sqlx::query_as::<_, UserInfo>(user_add)
                 .bind(&ssn)
                 .bind(user.first_name.as_ref().unwrap())
@@ -184,10 +185,14 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
                 .await {
                     Ok(row) => row,
                     // Error caused by user existing
-                    Err(_) => return response(503, json!({"message": "Could not create customer"}))
+                    Err(e) => {
+                        println!("{}", e);
+                        return response(503, json!({"message": "Could not create customer"}))
+                    }
                 }
         }
     };
+    println!("ADDING RELATION");
 
     match sqlx::query(relation_add)
         .bind(customer_id)
@@ -202,7 +207,7 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
 async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let user_relation_delete = r#"
         DELETE FROM "PartnerCustomers"
-        WHERE id = $1 AND user_id = $2
+        WHERE partner_id = $1 AND customer_id = $2
     "#;
     let user_delete = r#"
         DELETE FROM "Customers"
@@ -261,7 +266,7 @@ async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &
     }
 
     user_update_string.push_str("WHERE id = $1\n");
-    user_update_string.push_str("AND EXISTS (SELECT 1 FROM \"PartnerCustomers\" WHERE user_id = $1 AND id = $2)");
+    user_update_string.push_str("AND EXISTS (SELECT 1 FROM \"PartnerCustomers\" WHERE customer_id = $1 AND partner_id = $2)");
     
     // Create query and bind key values
     let mut query = sqlx::query(user_update_string.as_str())
