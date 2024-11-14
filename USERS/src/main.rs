@@ -66,7 +66,7 @@ fn response(status_code: i64, data: Value) -> ApiGatewayProxyResponse {
 async fn get_user_by_id(db_connection: &sqlx::PgPool, user_id: &i64) -> Vec<UserInfo> {
     let user_query = r#"
         SELECT id, first_name, last_name, email, conditions, pending_documents
-        FROM "Users"
+        FROM "Customers"
         WHERE id = $1
     "#;
 
@@ -81,8 +81,8 @@ async fn get_user_by_id(db_connection: &sqlx::PgPool, user_id: &i64) -> Vec<User
 async fn get_user_for_customer_by_id(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &i64) -> Vec<UserInfo> {
     let user_query = r#"
         SELECT u.id, u.first_name, u.last_name, u.email, u.conditions, u.pending_documents
-        FROM "Users" AS u
-        JOIN "CustomerUsers" AS cu ON u.id = cu.user_id
+        FROM "Customers" AS u
+        JOIN "PartnerCustomers" AS cu ON u.id = cu.user_id
         WHERE cu.id = $1
             AND cu.user_id = $2
     "#;
@@ -96,67 +96,51 @@ async fn get_user_for_customer_by_id(db_connection: &sqlx::PgPool, customer_id: 
         .expect("Database user query")
 }
 
-async fn get_user_by_ssn(
-            db_connection: &sqlx::PgPool, 
-            customer_id: &String, 
-            ssn: &String, 
-            first_name: &String, 
-            last_name: &String
-        ) -> Vec<UserInfo> {
+async fn get_user_by_ssn(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let user_query = r#"
         SELECT u.id, u.first_name, u.last_name, u.email, u.conditions, u.pending_documents
-        FROM "Users" AS u
-        JOIN "CustomerUsers" AS cu ON u.id = cu.user_id
+        FROM "Customers" AS u
+        JOIN "PartnerCustomers" AS cu ON u.id = cu.user_id
         WHERE u.ssn = $2 AND u.first_name = $3 AND u.last_name = $4
             AND cu.id = $1
     "#;
-
+    let ssn_hash = hash_ssn(user.ssn.as_ref().unwrap());
     let query = sqlx::query_as::<_, UserInfo>(user_query)
         .bind(customer_id)
-        .bind(ssn)
-        .bind(first_name)
-        .bind(last_name);
+        .bind(ssn_hash)
+        .bind(user.first_name.as_ref().unwrap())
+        .bind(user.last_name.as_ref().unwrap());
     
-    query.fetch_all(db_connection)
+    let users = query.fetch_all(db_connection)
         .await
-        .expect("Database user query")
+        .expect("Database user query");
+
+    match users.len() {
+        0 => response(
+            200, 
+            json!({})
+        ),
+        1 => response(
+            200, 
+            serde_json::to_value(users[0].clone()).expect("JSON Parse user")
+        ),
+        // Requests should not be able to return more than a single user
+        _ => response(401, json!({"message": "Unauthorized request"}))
+    }
 }
 
-async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &String, body: &Option<String>) -> ApiGatewayProxyResponse {
-    
-    let users;
-    if user_id != "" {
-        let uid = user_id.parse::<i64>().unwrap_or(0);
-        users = get_user_for_customer_by_id(db_connection, customer_id, &uid).await;
-    } else {
-        let user_info: UserPOST = match body {
-            Some(b) => match serde_json::from_str(b) {
-                Ok(o) => o,
-                Err(_) => {
-                    return response(401, json!({"message": "Invalid data"}))
-                }
-            },
-            None => {
-                return response(401, json!({"message": "No data supplied"}))
-            }
-        };
-        users = get_user_by_ssn(
-            db_connection, 
-            customer_id, 
-            user_info.ssn.as_ref().expect("user SSN"), 
-            user_info.first_name.as_ref().expect("user first name"), 
-            user_info.last_name.as_ref().expect("user last name")
-        ).await;
-    }
+async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &String) -> ApiGatewayProxyResponse {
+    let uid = user_id.parse::<i64>().unwrap_or(0);
+    let users = get_user_for_customer_by_id(db_connection, customer_id, &uid).await;
     
     match users.len() {
         0 => response(
             200, 
-            json!({ "data": { "user": {} } })
+            json!({})
         ),
         1 => response(
             200, 
-            json!({ "data": { "user": users[0].clone() } })
+            serde_json::to_value(users[0].clone()).expect("JSON Parse user")
         ),
         // Requests should not be able to return more than a single user
         _ => response(401, json!({"message": "Unauthorized request"}))
@@ -165,7 +149,7 @@ async fn user_get(db_connection: &sqlx::PgPool, customer_id: &String, user_id: &
 
 async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let user_add = r#"
-        INSERT INTO "Users" 
+        INSERT INTO "Customers" 
         (ssn, first_name, last_name, email)
         VALUES
         ($1, $2, $3, $4)
@@ -173,7 +157,7 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
         RETURNING id, first_name, last_name, email, conditions, pending_documents
     "#;
     let relation_add = r#"
-        INSERT INTO "CustomerUsers"
+        INSERT INTO "PartnerCustomers"
         (id, user_id)
         VALUES
         ($1, $2)
@@ -193,9 +177,9 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
         
             match sqlx::query_as::<_, UserInfo>(user_add)
                 .bind(&ssn)
-                .bind(&user.first_name.as_ref().unwrap())
-                .bind(&user.last_name.as_ref().unwrap())
-                .bind(&user.email.as_ref().unwrap())
+                .bind(user.first_name.as_ref().unwrap())
+                .bind(user.last_name.as_ref().unwrap())
+                .bind(user.email.as_ref().unwrap())
                 .fetch_one(db_connection)
                 .await {
                     Ok(row) => row,
@@ -206,22 +190,22 @@ async fn user_add(db_connection: &sqlx::PgPool, customer_id: &String, user: &Use
     };
 
     match sqlx::query(relation_add)
-        .bind(&customer_id)
+        .bind(customer_id)
         .bind(&new_user.id)
         .execute(db_connection)
         .await {
-            Ok(_) => response(200, json!({"user": new_user})),
+            Ok(_) => response(200, json!( new_user )),
             Err(_) => response(503, json!({"message": "Could not add customer"}))
         }
 }
 
 async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let user_relation_delete = r#"
-        DELETE FROM "CustomerUsers"
+        DELETE FROM "PartnerCustomers"
         WHERE id = $1 AND user_id = $2
     "#;
     let user_delete = r#"
-        DELETE FROM "Users"
+        DELETE FROM "Customers"
         WHERE id = $1
     "#;
     // Start transaction
@@ -253,7 +237,7 @@ async fn user_delete(db_connection: &sqlx::PgPool, customer_id: &String, user: &
 
 async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &UserPOST) -> ApiGatewayProxyResponse {
     let mut user_update_string = String::new();
-    user_update_string.push_str("UPDATE \"Users\" SET\n");
+    user_update_string.push_str("UPDATE \"Customers\" SET\n");
 
     // Determine what to update
     let mut update_values = HashMap::<&str, String>::new();
@@ -277,7 +261,7 @@ async fn user_update(db_connection: &sqlx::PgPool, customer_id: &String, user: &
     }
 
     user_update_string.push_str("WHERE id = $1\n");
-    user_update_string.push_str("AND EXISTS (SELECT 1 FROM \"CustomerUsers\" WHERE user_id = $1 AND id = $2)");
+    user_update_string.push_str("AND EXISTS (SELECT 1 FROM \"PartnerCustomers\" WHERE user_id = $1 AND id = $2)");
     
     // Create query and bind key values
     let mut query = sqlx::query(user_update_string.as_str())
@@ -301,7 +285,8 @@ async fn user_post(db_connection: &sqlx::PgPool, customer_id: &String, body: &Op
     let user_info: UserPOST = match body {
         Some(b) => match serde_json::from_str(b) {
             Ok(o) => o,
-            Err(_) => {
+            Err(e) => {
+                println!("{}", e);
                 return response(401, json!({"message": "Invalid data"}))
             }
         },
@@ -310,6 +295,7 @@ async fn user_post(db_connection: &sqlx::PgPool, customer_id: &String, body: &Op
         }
     };
     match user_info.method.as_str() {
+        "get" => get_user_by_ssn(db_connection, customer_id, &user_info).await,
         "add" => user_add(db_connection, customer_id, &user_info).await,
         "update" => user_update(db_connection, customer_id, &user_info).await,
         "delete" => user_delete(db_connection, customer_id, &user_info).await,
@@ -413,7 +399,7 @@ async fn handler(event: LambdaEvent<ApiGatewayProxyRequest>)
     
     let id = query_params.first("id").unwrap_or("").to_string();
     match req_method {
-        http::Method::GET => return Ok( user_get(&pool, caller_subject, &id, &body).await ),
+        http::Method::GET => return Ok( user_get(&pool, caller_subject, &id).await ),
         http::Method::POST => return Ok( user_post(&pool, caller_subject, &body).await ),
         _ => println!("Unsupported method")
     }
