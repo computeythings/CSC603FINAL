@@ -33,7 +33,31 @@ def post_customers():
             return jsonify({'message': 'Success'})
         case _:
             return jsonify({'message': 'Invalid method'}), 400
+        
+@app.route('/api/v1/upload', methods=['POST'])
+def file_upload():
+    # Check if files are present in the request
+    if 'files[]' not in request.files:
+        return jsonify({'error': 'No files uploaded'}), 400
 
+    uploaded_files = request.files.getlist('files[]')  # Get all uploaded files
+    file_info = []
+
+    for file in uploaded_files:
+        file_info.append({
+            'name': file.filename,
+            'size': len(file.read())  # Get file size in bytes
+        })
+
+        # Reset file cursor for further operations (if needed)
+        file.seek(0)
+
+    # Print file details to console
+    for info in file_info:
+        print(f"File Name: {info['name']}, File Size: {info['size']} bytes")
+
+    # Respond with the details of the uploaded files
+    return jsonify({'uploaded_files': file_info}), 200
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)
