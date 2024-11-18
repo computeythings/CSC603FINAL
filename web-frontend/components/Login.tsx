@@ -26,13 +26,13 @@ const LoginPage: React.FC<props> = ({ service }) => {
                 toast({
                     title: "Success",
                     description: "Password Changed.",
-                    // action: <ToastAction altText="Try again">Try again</ToastAction>,
+                    duration: 3000
                   })
             } else {
                 toast({
                     title: "Error",
                     description: "Unable to change password",
-                    //action: <ToastAction altText="Try again">Try again</ToastAction>,
+                    duration: 3000
                   })
             }
             return res

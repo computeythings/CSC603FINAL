@@ -5,6 +5,7 @@ import React, { useEffect, useState, ReactNode } from 'react'
 import { useCookies } from '@/hooks/use-cookies'
 import LoginService from '@/services/LoginService'
 import ResponseType from '@/types/LoginResponseType'
+import { Toaster } from "@/components/ui/toaster";
 
 const service = new LoginService()
 
@@ -48,6 +49,7 @@ const MainLayout = ({ children }: props) => {
 
 	return (
 		<div className="flex flex-col h-screen">
+			<Toaster />
 			<Navbar />
 			<main className="flex-grow">{children}</main>
 			<Footer />

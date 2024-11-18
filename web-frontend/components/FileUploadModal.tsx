@@ -13,11 +13,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import ApiService from '@/services/ApiService'
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useCookies } from '@/hooks/use-cookies';
+import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 const FileUploadModal: React.FC = () => {
-    const [files, setFiles] = useState<File[]>([]);
+    const { getCookie } = useCookies()
+    const { toast } = useToast()
+    const [openDialog, setOpenDialog] = useState(false)
+    const [uploading, setUploading] = useState(false)
+    const [files, setFiles] = useState<File[]>([])
     const {getRootProps, getInputProps, open, acceptedFiles} = useDropzone({
       // Disable click and keydown behavior
       noClick: false,
@@ -27,14 +35,39 @@ const FileUploadModal: React.FC = () => {
         setFiles(prevFiles => [...prevFiles, ...acceptedFiles]);
       }
     });
+
+    const removeFile = (fileName: string) => {
+        setFiles((prevFiles) => prevFiles.filter((file) => file.name !== fileName));
+    }
+
+    const upload = () => {
+        if (files.length === 0)
+            return
+        setUploading(true)
+        ApiService.uploadFiles(getCookie('accessToken')!, files).then(res => {
+            setFiles([])
+            setOpenDialog(false)
+        }).catch(err => {
+            console.error(err)
+            toast({
+                title: "Error",
+                description: err.message,
+                duration: 3000
+              })
+        }).finally(() => {
+            setUploading(false)
+        })
+    }
   
     const fileList = files.map(file => (
         <li key={file.name}> {/* Use file.name instead of file.path */}
+            <Button variant="ghost" className='text-red-500 font-bold mr-1' onClick={() => removeFile(file.name)}>X</Button>
             {file.name} - {file.size} bytes
         </li>
     ));
+
     return (
-        <Dialog>
+        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
         <DialogTitle></DialogTitle>
         <DialogTrigger asChild>
             <Button variant="outline">Upload Document</Button>
@@ -48,10 +81,13 @@ const FileUploadModal: React.FC = () => {
                 <div className="mx-16 flex">
                     <div>
                         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Files:</h2>
-                        <ul className="max-w-md space-y-1 text-gray-500 list-disc list-inside dark:text-gray-400">{fileList}</ul>
+                        <ul className="max-w-md space-y-1 text-gray-500 list-inside list-none">{fileList}</ul>
                     </div>
                     <div className="ml-auto mt-auto">
-                        <Button variant="outline" onClick={open} className='mt-auto mb-2 shadow-md'>Submit</Button>
+                        <Button variant="outline" onClick={upload} className='mt-auto mb-2 shadow-md' disabled={uploading}>
+                            {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                            Submit
+                        </Button>
                     </div>
                 </div>
             </div>
