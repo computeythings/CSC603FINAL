@@ -1,6 +1,6 @@
 import { jwtDecode } from "jwt-decode";
 import crypto from 'crypto'
-import ResponseType from "@/types/ResponseType";
+import ResponseType from "@/types/LoginResponseType";
 import {
     CognitoIdentityProviderClient,
     InitiateAuthCommand,

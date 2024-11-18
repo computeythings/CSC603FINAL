@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import LoginService from '@/services/LoginService'
-import ResponseType from '@/types/ResponseType';
+import ResponseType from '@/types/LoginResponseType';
 import LoginForm from './LoginForm'
 import MFAForm from './MFAForm'
 import MFASetupForm from './MFASetupForm';

@@ -21,6 +21,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
   } from "@/components/ui/alert-dialog"
+import FileUploadModal from './FileUploadModal'
 
 interface props {
     customerData: CustomerData | null
@@ -87,7 +88,7 @@ const CustomerInfo: React.FC<props> = ({ customerData, updateCustomer, setView }
                     </AlertDialogFooter>
                 </AlertDialogContent>
                 </AlertDialog>
-                <Button variant="outline">Upload Document</Button>
+                <FileUploadModal />
             </div>
         </CardContent>
     </>

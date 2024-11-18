@@ -20,7 +20,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp"
 import { useState } from "react"
-import ResponseType from "@/types/ResponseType"
+import ResponseType from "@/types/LoginResponseType"
 
 const FormSchema = z.object({
   pin: z.string().min(6, {

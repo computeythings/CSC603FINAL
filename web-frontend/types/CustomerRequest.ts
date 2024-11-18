@@ -1,5 +1,5 @@
 interface CustomerRequest {
-    method: 'get' | 'add' | 'modify' | 'delete';
+    method: 'get' | 'add' | 'update' | 'delete';
     id?: string;
     ssn?: string;
     first_name?: string;

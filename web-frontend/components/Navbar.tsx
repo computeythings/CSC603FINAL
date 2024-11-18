@@ -47,21 +47,21 @@ const Navbar: React.FC = () => {
                   /> DocuMedIQ
                 </div>
               </NavigationMenuItem >
-                <Link href="/" legacyBehavior passHref>
-                  <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                    Dashboard
-                  </NavigationMenuLink>
-                </Link>
-                <Link href="/products" legacyBehavior passHref>
-                  <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                    Products
-                  </NavigationMenuLink>
-                </Link>
-                <Link href="/customers" legacyBehavior passHref>
-                  <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                    Customers
-                  </NavigationMenuLink>
-                </Link>
+              {/* <Link href="/" legacyBehavior passHref>
+                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                  Dashboard
+                </NavigationMenuLink>
+              </Link>
+              <Link href="/products" legacyBehavior passHref>
+                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                  Products
+                </NavigationMenuLink>
+              </Link>
+              <Link href="/customers" legacyBehavior passHref>
+                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                  Customers
+                </NavigationMenuLink>
+              </Link> */}
             </NavigationMenuList>
             <div className='ml-auto mr-8'>
             <DropdownMenu>

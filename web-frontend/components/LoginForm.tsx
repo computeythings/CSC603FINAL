@@ -13,7 +13,7 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form"
-import ResponseType from '@/types/ResponseType';
+import ResponseType from '@/types/LoginResponseType';
 
 interface props {
     submit: (username: string, password: string) => Promise<ResponseType>

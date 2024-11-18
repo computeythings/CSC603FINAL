@@ -4,7 +4,7 @@ import Footer from "@/components/Footer"
 import React, { useEffect, useState, ReactNode } from 'react'
 import { useCookies } from '@/hooks/use-cookies'
 import LoginService from '@/services/LoginService'
-import ResponseType from '@/types/ResponseType'
+import ResponseType from '@/types/LoginResponseType'
 
 const service = new LoginService()
 
@@ -49,7 +49,7 @@ const MainLayout = ({ children }: props) => {
 	return (
 		<div className="flex flex-col h-screen">
 			<Navbar />
-				<main className="flex-grow">{children}</main>
+			<main className="flex-grow">{children}</main>
 			<Footer />
 		</div>
 	)

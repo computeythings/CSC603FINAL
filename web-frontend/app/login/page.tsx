@@ -4,7 +4,7 @@ import Login from '@/components/Login'
 import LoginService from '@/services/LoginService'
 import { useCookies } from '@/hooks/use-cookies'
 import React, { useEffect, useState } from 'react'
-import ResponseType from '@/types/ResponseType'
+import ResponseType from '@/types/LoginResponseType'
 
 const service = new LoginService()
 

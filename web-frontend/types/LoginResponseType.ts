@@ -1,4 +1,4 @@
-enum ResponseType {
+enum LoginResponseType {
     SUCCESS = 'SUCCESS',
     ERROR = 'ERROR',
     MFA_SETUP = 'MFA_SETUP',
@@ -6,4 +6,4 @@ enum ResponseType {
     NEW_PASSWORD_REQUIRED = 'NEW_PASSWORD_REQUIRED'
 }
 
-export default ResponseType
+export default LoginResponseType

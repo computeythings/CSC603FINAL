@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import Image from 'next/image'
 import QRCode from 'qrcode'
 import MFAForm from './MFAForm'
-import ResponseType from '@/types/ResponseType'
+import ResponseType from '@/types/LoginResponseType'
 
 interface props {
     user: string
